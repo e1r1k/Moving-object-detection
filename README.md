@@ -6,3 +6,7 @@ Base dataset is unlabelled, so in order to get a training set I created a script
 This works by placing points along a line defined by some constraints made by examining streaks from the real dataset.
 These are then smoothed to create a realistic looking streak in the sampled image. Then, another similar streak is generated further along in the consecutive image, and a label mask is
 generated for verification.
+
+### Image generation:
+
+![Example generated image](generator_demo.png)
