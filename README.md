@@ -1,3 +1,5 @@
+## Moving object detection with the Frigate dataset
+
 Spare-time project using the frigate astrophotography dataset to annotate moving objects in low earth orbit. 
 By looking at consecutive frames, detects streaks in the image caused by moving satellites while ignoring distractor signals from things like cosmic rays etc that only appear on single frames.
 Base dataset is unlabelled, so in order to get a training set I created a script for generating synthetic objects in real patches of the original data.
