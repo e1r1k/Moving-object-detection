@@ -29,6 +29,7 @@ Samples are stored WITHOUT augmentation, so meta coordinates are exact; flips /
 rot90 are applied at load time (StoredDataset(augment=True)).
 """
 
+
 import argparse
 import glob
 import json
@@ -41,7 +42,7 @@ from PIL import Image
 
 import synthetic_moving_objects as S
 
-STRIP_W = 384                                    # strip width in aligned-frame columns
+STRIP_W = 384                                
 SPLIT_STRIPS = {"train": [0, 1, 3, 5], "val": [2], "test": [4]}
 SPLIT_CODE = {"train": 0, "val": 1, "test": 2}
 
@@ -61,7 +62,7 @@ def build_split(pairs, cfg, split, n, seed, out_dir):
     masks = np.lib.format.open_memmap(os.path.join(d, "masks.npy"), "w+", np.uint8, (n, 2, P, (P + 7) // 8))
     with open(os.path.join(d, "meta.jsonl"), "w") as f:
         for i in range(n):
-            rng = np.random.default_rng([seed, SPLIT_CODE[split], i])   # reproducible per sample
+            rng = np.random.default_rng([seed, SPLIT_CODE[split], i]) 
             k = int(rng.integers(len(pairs)))
             A, B = pairs.get(k)
             xr = pick_region(rng, split, A.shape[1], P)
@@ -81,17 +82,41 @@ def unpack_mask(packed, width):
 
 
 class StoredDataset:
-    """Reads a split folder written by build_split. Works as a torch Dataset if torch is present."""
+    """Reads a split folder written by build_split (duck-typed map-style dataset).
 
-    def __init__(self, folder, augment=False):
-        self.images = np.load(os.path.join(folder, "images.npy"), mmap_mode="r")
-        self.masks = np.load(os.path.join(folder, "masks.npy"), mmap_mode="r")
+    The memory-mapped arrays are opened lazily and dropped when pickled, so DataLoader
+    workers (which pickle the dataset on Windows) never copy the data.
+    Items: dict(x=(3,P,P), y=(2,P,P), idx=int[, meta=dict]); torch tensors if torch exists.
+    with_meta=False is needed for DataLoader batching (meta dicts can't be collated).
+    """
+
+    def __init__(self, folder, augment=False, with_meta=True):
+        self.folder, self.augment, self.with_meta = folder, augment, with_meta
+        self._images = self._masks = None
         with open(os.path.join(folder, "meta.jsonl")) as f:
             self.meta = [json.loads(line) for line in f]
-        self.augment = augment
+        n_img = np.load(os.path.join(folder, "images.npy"), mmap_mode="r").shape[0]
+        self._n = min(n_img, len(self.meta))     
+
+    @property
+    def images(self):
+        if self._images is None:
+            self._images = np.load(os.path.join(self.folder, "images.npy"), mmap_mode="r")
+        return self._images
+
+    @property
+    def masks(self):
+        if self._masks is None:
+            self._masks = np.load(os.path.join(self.folder, "masks.npy"), mmap_mode="r")
+        return self._masks
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        d["_images"] = d["_masks"] = None
+        return d
 
     def __len__(self):
-        return len(self.images)
+        return self._n
 
     def __getitem__(self, i):
         A, B = np.asarray(self.images[i, 0]), np.asarray(self.images[i, 1])
@@ -104,8 +129,11 @@ class StoredDataset:
         x = S.to_input(A, B)
         if S.torch is not None:
             import torch
-            return dict(x=torch.from_numpy(x), y=torch.from_numpy(y), meta=self.meta[i])
-        return dict(x=x, y=y, meta=self.meta[i])
+            x, y = torch.from_numpy(x), torch.from_numpy(y)
+        out = dict(x=x, y=y, idx=i)
+        if self.with_meta:
+            out["meta"] = self.meta[i]
+        return out
 
 
 def make_preview(out_dir, split="test", n=4):
@@ -121,6 +149,23 @@ def make_preview(out_dir, split="test", n=4):
         rows.append(np.hstack([g(A), g(B), np.stack([d] * 3, -1), ov]))
     Image.fromarray(np.vstack(rows)).save(os.path.join(out_dir, "preview.png"))
 
+
+README = """# Synthetic moving-object dataset
+
+Real consecutive Frigate frames (stars, noise, residual misalignment) with injected
+moving objects (points / short streaks) displaced between frame A and frame B.
+
+Per split folder: images.npy (N,2,P,P) uint8 [A,B]; masks.npy (N,2,P,ceil(P/8)) bit-packed
+[object in A, object in B] (build_synthetic_dataset.unpack_mask(m, P)); meta.jsonl with the
+injected objects (centres in A and B, length, angle, peak amplitude, displacement, ...),
+the distractors (hot pixels / cosmic-ray tracks present in only one frame, label 0),
+patch origin and source pair.
+
+Samples are un-augmented; meta coordinates refer to the stored patch.
+Load with StoredDataset(folder, augment=True) for training.
+See manifest.json for the generator config, seed and source frames.
+Real, hand-verified streaks are NOT in here: keep them as a separate test set.
+"""
 
 
 def main():
@@ -142,7 +187,7 @@ def main():
     print(f"source folder : {src}")
     print(f"frames found  : {len(paths)}")
     if not paths:
-        raise SystemExit("ERROR: no files matching Capture_*.png in the source folder")
+        raise SystemExit("ERROR: no files matching Capture_*.png in the source folder - check --src")
     pairs = S.FramePairs(paths, gap=a.gap, require_consecutive=not a.no_number_check)
     print(f"usable pairs  : {len(pairs)}  (frame numbers must differ by exactly --gap={a.gap})")
     if len(pairs) == 0:
@@ -169,6 +214,8 @@ def main():
                                     for k, (i, j) in enumerate(pairs.idx)})
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
+    with open(os.path.join(out, "README.md"), "w") as f:
+        f.write(README)
     make_preview(out)
     print("done ->", out)
 

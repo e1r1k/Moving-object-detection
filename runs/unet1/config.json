@@ -1,0 +1,20 @@
+{
+  "data": "synthetic_dataset",
+  "out": "runs/unet1",
+  "epochs": 15,
+  "batch_size": 16,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "base": 32,
+  "depth": 4,
+  "workers": 2,
+  "thr": 0.5,
+  "min_size": 2,
+  "max_train_samples": null,
+  "val_samples": 1000,
+  "seed": 0,
+  "resume": false,
+  "test_only": false,
+  "n_train": 20000,
+  "steps_per_epoch": 1250
+}
