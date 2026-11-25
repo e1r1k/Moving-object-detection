@@ -10,3 +10,9 @@ generated for verification.
 ### Image generation:
 
 ![Example generated image](generator_demo.png)
+
+### Preliminary model testing:
+
+Testing on a POC model made mostly using claude shows that a U-Net type architecture is able to accurately detect very faint streaks that would be difficult to spot through manual inspection:
+
+![Output image](reslts/f615/overlay.png)
